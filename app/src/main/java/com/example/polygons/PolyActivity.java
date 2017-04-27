@@ -8,8 +8,12 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.maps.CameraUpdateFactory;
@@ -95,8 +99,18 @@ public class PolyActivity extends AppCompatActivity
     // reference to googlemap
     private GoogleMap myMap;
     //allow to recognize route creation mode
-    private boolean routeModeOn = false;
+    private boolean routeModeOn = true;
+    //starts speedThread only once on first click
+    private boolean speedThreadStarted = false;
+    //creating MyLocation object with location and speed fields
+    private MyLocation myLocation;
 
+    private Vector<Vector<Polyline>> printedRoutes;
+
+
+    Button locationButton;
+    Button routeModeButton;
+    TextView speedText;
 
     //interface of GoogleMaps for our application
     //Create poliline from latlngs: objects representing google maps coordinates
@@ -111,7 +125,22 @@ public class PolyActivity extends AppCompatActivity
 
     //TODO: uzupelnij
     public LatLng getLocation() {
-        return new LatLng(0, 0);
+        MyLocation myLocation = new MyLocation(this);
+        return myLocation.getLocation();
+    }
+
+    public void showLocationOnMap(View v){
+        LatLng loc = myLocation.getLocation();
+
+        if(loc != null) {
+            drawLocationMarkerOnMap(loc);
+            setLocation(loc);
+        }
+        else {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setMessage("Cannot get Your position").setTitle("Location Error");
+            AlertDialog dialog = builder.create();
+        }
     }
 
     public void setLocation(LatLng location) {
@@ -130,19 +159,36 @@ public class PolyActivity extends AppCompatActivity
     //quite unusefull method
     public void drawPolilineMode() {
         myMap.setContentDescription(ROUTE_MODE_MESSAGE);
-
     }
-    //enable user to create his own route
-    public void setRouteModeOn(){
-        routeModeOn = true;
-    }
+    //enable user to create his own route or
     //disable user ability to creating own route
-    public void setRouteModeOff(){
-        routeModeOn = false;
+    public void setRouteMode(View v){
+        if(routeModeOn) {
+            routeModeOn = false;
+            routeModeButton.setText("Route Mode OFF");
+        }
+        else {
+            routeModeOn = true;
+            routeModeButton.setText("Route Mode ON");
+        }
     }
+
+    public void removeRoute(View v){
+        if(printedRoutes.size()>0) {
+            for (Polyline p : printedRoutes.get(0)) {
+                p.remove();
+            }
+            printedRoutes.remove(0);
+        }
+    }
+
+
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
+
         super.onCreate(savedInstanceState);
         // Retrieve the content view that renders the map.
         setContentView(R.layout.activity_maps);
@@ -155,10 +201,16 @@ public class PolyActivity extends AppCompatActivity
 
         //some trenning point in Australia ;)
         routeLatLng = new Vector<>();
+        printedRoutes = new Vector<>();
         routeLatLng.add(new LatLng(-27.457, 153.040));
         routeLatLng.add(new LatLng(-33.852, 151.211));
         routeLatLng.add(new LatLng(-37.813, 144.9620));
         routeLatLng.add(new LatLng(-34.928, 138.599));
+
+        locationButton = (Button)findViewById(R.id.locationButton);
+        routeModeButton = (Button)findViewById(R.id.routeModeButton);
+        speedText = (TextView)findViewById(R.id.speedText);
+        myLocation = new MyLocation(this);
 
         CommunicationLayer communicationLayer = new CommunicationLayer();
         communicationLayer.registerPolyActivity(this);
@@ -173,11 +225,9 @@ public class PolyActivity extends AppCompatActivity
                 // sees the explanation, try again to request the permission.
 
             } else {
-
                 // No explanation needed, we can request the permission.
 
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, MY_LOCATION_PERMISSION);
-
                 // MY_PERMISSIONS_REQUEST_READ_CONTACTS is an
                 // app-defined int constant. The callback method gets the
                 // result of the request.
@@ -192,17 +242,14 @@ public class PolyActivity extends AppCompatActivity
             case MY_LOCATION_PERMISSION: {
                 // If request is cancelled, the result arrays are empty.
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-
                     // permission was granted, yay! Do the
                     // contacts-related task you need to do.
                 } else {
-
                     // permission denied, boo! Disable the
                     // functionality that depends on this permission.
                 }
                 return;
             }
-
             // other 'case' lines to check for other
             // permissions this app might request
         }
@@ -236,7 +283,7 @@ public class PolyActivity extends AppCompatActivity
 
         }
         // Position the map's camera near Warsaw
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(52.2297700, 21.0117800), 4));
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(52.2297700, 21.0117800), 10));
 
         // Set listeners for click events.
         googleMap.setOnPolylineClickListener(this);
@@ -255,32 +302,65 @@ public class PolyActivity extends AppCompatActivity
                 if(routeModeOn){
                     if(clicCounter==0 ){
                         routeLatLng.add(latLng);
+                        //drawMarkerOnMap(latLng);
                         clicCounter++;
                     }else {
                         routeLatLng.add(latLng);
+                        //drawMarkerOnMap(latLng);
                         new GetDirection().execute();
-
                         routeLatLng.clear();
                         clicCounter=0;
                     }
                 }else {
                     pointOnMap = latLng;
-                    drawMarkerOnMap();
+                    drawMarkerOnMap(latLng);
                 }
             }
         });
+
+        if(!speedThreadStarted) {
+            printSpeed();
+            speedThreadStarted = true;
+        }
     }
 
+    private void printSpeed(){
+        Thread t = new Thread() {
 
-    private void drawMarkerOnMap() {
-        if (pointOnMap != null) {
-            myMap.addMarker(new MarkerOptions().position(pointOnMap));
-            myMap.moveCamera(CameraUpdateFactory.newLatLng(pointOnMap));
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                String speedToPrint = myLocation.getSpeed() + "";
+                                if(speedToPrint.length()>6)
+                                    speedToPrint=speedToPrint.substring(0,5);
+
+                                speedToPrint = speedToPrint + " km/h";
+                                speedText.setText(speedToPrint);
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {}
+            }
+        };
+
+        t.start();
+    }
+
+    private void drawLocationMarkerOnMap(LatLng loc){
+        if (loc != null) {
+            myMap.addMarker(new MarkerOptions().position(loc).title("tu jestem!"));
+            myMap.moveCamera(CameraUpdateFactory.newLatLngZoom(loc, 19));
         }
-
-        if (pointOfPresence != null) {
-            myMap.addMarker(new MarkerOptions().position(pointOfPresence).title("tu jestem!"));
-            myMap.moveCamera(CameraUpdateFactory.newLatLng(pointOfPresence));
+    }
+    private void drawMarkerOnMap(LatLng point) {
+        if (point != null) {
+            myMap.addMarker(new MarkerOptions().position(point));
+           // myMap.moveCamera(CameraUpdateFactory.zoomBy(15));
         }
     }
 
@@ -385,7 +465,7 @@ public class PolyActivity extends AppCompatActivity
         }
 
         protected String doInBackground(String... args) {
-            String stringUrl = "http://maps.googleapis.com/maps/api/directions/json?origin=" + origin + "&destination=" + destination + "&sensor=false";
+            String stringUrl = "http://maps.googleapis.com/maps/api/directions/json?origin=" + origin + "&destination=" + destination + "&sensor=false&mode=walking";
             StringBuilder response = new StringBuilder();
             try {
                 URL url = new URL(stringUrl);
@@ -423,6 +503,7 @@ public class PolyActivity extends AppCompatActivity
         }
 
         protected void onPostExecute(String file_url) {
+            Vector<Polyline> parts = new Vector<>();
             for (int i = 0; i < pontos.size() - 1; i++) {
                 LatLng src = pontos.get(i);
                 LatLng dest = pontos.get(i + 1);
@@ -430,6 +511,7 @@ public class PolyActivity extends AppCompatActivity
                     //here is where it will draw the polyline in your map
                     Polyline line = myMap.addPolyline(new PolylineOptions().add(new LatLng(src.latitude, src.longitude),
                             new LatLng(dest.latitude, dest.longitude)).width(2).color(Color.RED).geodesic(true));
+                    parts.add(line);
                 } catch (NullPointerException e) {
                     Log.e("Error", "NullPointerException onPostExecute: " + e.toString());
                 } catch (Exception e2) {
@@ -440,6 +522,7 @@ public class PolyActivity extends AppCompatActivity
                     myMap.moveCamera(CameraUpdateFactory.newLatLng(pontos.get(i)));
                 }
             }
+            printedRoutes.add(parts);
             dialog.dismiss();
 
         }

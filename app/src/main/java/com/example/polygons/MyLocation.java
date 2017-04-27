@@ -18,12 +18,14 @@ public class MyLocation implements LocationListener{
     private Context context;
     private LocationManager locationManager;
     private double latitude, longitude, speed; // location parameters
+    private double prevLatitude, prevLongitude;
+    private int locationUpdateTime = 1000; //check location in every locationUpdateTime (ms)
+    private Location LastKnownLocation , PrevLocation;
 
     public MyLocation(Context context){
         this.context = context;
-
         locationManager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 1, this);
     }
 
     public LatLng getLocation(){
@@ -57,11 +59,10 @@ public class MyLocation implements LocationListener{
             } else {
                 if (isNetworkEnabled) {
                     location=null;
-                    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 100, 1, this);
+                    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, locationUpdateTime, 1, this);
                     Log.d("Network", "Network");
                     if (locationManager != null) {
-                        location = locationManager
-                                .getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                        location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
                         if (location != null) {
                             latitude = location.getLatitude();
                             longitude = location.getLongitude();
@@ -72,11 +73,10 @@ public class MyLocation implements LocationListener{
                 if (isGPSEnabled) {
                     location=null;
                     if (location == null) {
-                        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 100, 1, this);
+                        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, locationUpdateTime, 1, this);
                         Log.d("GPS Enabled", "GPS Enabled");
                         if (locationManager != null) {
-                            location = locationManager
-                                    .getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                            location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                             if (location != null) {
                                 latitude = location.getLatitude();
                                 longitude = location.getLongitude();
@@ -89,8 +89,6 @@ public class MyLocation implements LocationListener{
         } catch (Exception e) {
             e.printStackTrace();
         }
-
-
     }
 
     public double getSpeed(){
@@ -99,11 +97,23 @@ public class MyLocation implements LocationListener{
 
     @Override
     public void onLocationChanged(Location location) {
-            latitude = location.getLatitude();
-            longitude = location.getLongitude();
-            speed = location.getSpeed(); //spedd in meter/minute
-            speed = (speed * 3600) / 1000;      // speed in km/minute               Toast.makeText(GraphViews.this, "Current speed:" + location.getSpeed(),Toast.LENGTH_SHORT).show();
+        LastKnownLocation = location;
 
+        if(PrevLocation != null){
+            if(location.hasSpeed()){
+                speed = location.getSpeed();
+            }else {
+                float[] distance = new float[5];
+                Location.distanceBetween(LastKnownLocation.getLatitude(), LastKnownLocation.getLongitude(),
+                        PrevLocation.getLatitude(),PrevLocation.getLongitude(), distance);
+
+                double timeDiff = LastKnownLocation.getTime() - PrevLocation.getTime();
+                speed = distance[0]/timeDiff;
+                speed = speed * 3.6;
+            }
+        }
+
+        PrevLocation = LastKnownLocation;
     }
 
     @Override
